@@ -1,0 +1,8 @@
+name = "ToolipsCrawl"
+uuid = "bc5540b7-af16-444d-8eba-940cc7c9cf32"
+authors = ["emmac <emmacboudreau@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+Toolips = "a47e2ad8-fcf7-417c-9746-32b9bdf220bd"
+ToolipsSession = "2fe55384-55bc-4df3-9d59-c817d405cd05"
