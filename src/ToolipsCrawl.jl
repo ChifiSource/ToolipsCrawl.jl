@@ -43,7 +43,26 @@ function crawl(f::Function, address::String)
         f(crawler)
         if length(crawler.addresses) < 1
             crawler.crawling = false
-            println(Toolips.Crayon())
+            println(Crayon(foreground = Symbol("light_red"), bold = true, blink = true), "Crawler: crawler stopped")
+            break
+        end
+        crawler.address = crawler.addresses[1]
+        deleteat!(crawler.addresses, 1)
+    end
+    crawler::Crawler
+end
+
+function crawl(f::Function, address::String ...)
+    crawler::Crawler = Crawler(address[1])
+    crawler.addresses = [add for add in address[2:length(address)]]
+    crawler.crawling = true
+    println(Crayon(foreground = Symbol("light_magenta"), bold = true), "Crawler: crawler started at $address")
+    @async while crawler.crawling
+        crawl!(crawler)
+        f(crawler)
+        if length(crawler.addresses) < 1
+            crawler.crawling = false
+            println(Crayon(foreground = Symbol("light_red"), bold = true, blink = true), "Crawler: crawler stopped")
             break
         end
         crawler.address = crawler.addresses[1]
