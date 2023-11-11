@@ -8,7 +8,6 @@ This package builds a web-scraping and web-crawling library atop the [toolips](h
 ### usage
 - [scraping](#scraping)
 - [crawling](#crawling)
-- [filtering](#filtering)
 - [collecting](#collecting)
 - [notes](#notes)
 
@@ -16,7 +15,7 @@ This package builds a web-scraping and web-crawling library atop the [toolips](h
 - `scrape(f::Function, address::String)` -> `::Crawler`
 - `scrape(f::Function, address::String, components::String ...)` -> `::Crawler`
 - `crawl(f::Function, address::String)` -> `::Crawler`
-- `crawl(f::Function, [addresses::Vector{String}])` -> `::Crawler`
+- `crawl(f::Function, addresses::String ...)` -> `::Crawler`
 
 
 Each of these functions returns a `Crawler`. A `Crawler` is used for two things -- firstly, to turn an HTML page into a `Vector{Servable}`. Secondly, find any URLs within that page and crawl to them. The former is done with both `scrape` and `crawl`, whereas the latter is exclusively done with `crawl`. **Scraping** will give us an easy way to view one page and aggregate its data, **crawling** will give us an easy way to collect data from pages indefinitely -- or until we run out of links, at which point our `Crawler` will `kill!` itself.
@@ -33,6 +32,8 @@ Dict{String, String} with 1 entry:
   "heading text" => "Data tables"
 ```
 ##### crawling
+
+##### collecting
 
 ##### notes
 This project relies heavily on `htmlcomponent` from `ToolipsSession`. In its current form, the `::String, ::Vector{String}` version of this function works **really** well. The regular version of this function is still a **work in progress** to get to perfection. That being said, note that scraping or crawling in instances where the IDs are not known is likely to be less reliable.
