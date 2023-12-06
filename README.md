@@ -9,9 +9,6 @@ This package builds a web-scraping and web-crawling library atop the [toolips](h
 - [scraping](#scraping)
 - [crawling](#crawling)
 - [collecting](#collecting)
-```julia
-
-```
 
 `ToolipsCrawl` usage centers around the `Crawler` type. This constructor is never called directly in conventional usage of the package, **instead** we use the high-level methods for `scrape` and `crawl`.
 - `scrape(f::Function, address::String)` -> `::Crawler`
@@ -47,6 +44,22 @@ scrape("https://github.com/ChifiSource") do c::Crawler
 end
 ```
 ##### crawling
-Crawling with `ToolipsCrawl` is done using the `crawl` function. The `crawl` function has two methods, one takes a `Function` and an `String` (address) and the other takes
+Crawling with `ToolipsCrawl` is done using the `crawl` function. The `crawl` function has two methods, one takes a `Function` and an `String` (address) and the other takes multiple addresses.
+```julia
+images = Vector{Servable}()
+newdiv = div("parentcont"); newdiv[:children] = images
+i = 0
+crawler1 = crawl("https://github.com/ChifiSource") do c::Crawler
+    f = findall(comp -> comp.tag == "img", c.components)
+    [begin
+        comp = c.components[position]
+        if "src" in keys(comp.properties)
+            image = img("ex", src = comp["src"], width = 50)
+            style!(image, "display" => "inline-block")
+            push!(images, image)
+        end
+    end for position in f]
+end
+```
 ##### collecting
 
