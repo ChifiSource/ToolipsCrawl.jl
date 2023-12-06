@@ -1,8 +1,8 @@
 <div align="center">
- <img id="mainimage" hidden="hello:)" src="https://github.com/ChifiSource/image_dump/blob/main/toolips/toolipscrawl.png"></img>
+ <img id="mainimage" src="https://github.com/ChifiSource/image_dump/blob/main/toolips/toolipscrawl.png"></img>
+ <h6 id="crawlsub">toolips crawl provides web-crawling for all!</h6>
  </div>
- 
- ##### toolips crawl provides web-crawling for all!
+
 This package builds a web-scraping and web-crawling library atop the [toolips](https://github.com/ChifiSource/Toolips.jl) web-development framework. This package prominently features high-level syntax atop the `Toolips` `Component` structure.
 
 ### usage
