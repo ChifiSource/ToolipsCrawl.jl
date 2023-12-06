@@ -13,7 +13,7 @@ end
 
 function scrape!(crawler::Crawler)
     data::String = Toolips.get(crawler.address)
-    crawler.components = htmlcomponent(data)
+    crawler.components = htmlcomponent(data, nonames = true)
     crawler
 end
 
@@ -26,11 +26,14 @@ end
 function crawl!(crawler::Crawler)
     scrape!(crawler)
     allprops = findall(c::Component{<:Any} -> "href" in keys(c.properties), crawler.components)
+    println(allprops)
     [begin
-        println("hello")
         comp = crawler.components[prop]
         lnk = comp["href"]
-        push!(crawler.addresses, comp["href"])
+        println(lnk)
+        if contains(lnk, "http")
+            push!(crawler.addresses, comp["href"])
+        end
     end for prop in allprops]
 end
 
@@ -38,12 +41,12 @@ function crawl(f::Function, address::String)
     crawler::Crawler = Crawler(address)
     crawler.crawling = true
     println(Crayon(foreground = Symbol("light_magenta"), bold = true), "Crawler: crawler started at $address")
-    @async while crawler.crawling
+    while crawler.crawling
         crawl!(crawler)
         f(crawler)
         if length(crawler.addresses) < 1
             crawler.crawling = false
-            println(Crayon(foreground = Symbol("light_red"), bold = true, blink = true), "Crawler: crawler stopped")
+            println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped")
             break
         end
         crawler.address = crawler.addresses[1]
@@ -86,6 +89,6 @@ kill!(crawler::Crawler) = begin
     println(Crayon(foreground = Symbol("light_red"), bold = true, blink = true), "Crawler: crawler stopped")
 end
 
-export scrape, crawl, kill
+export scrape, crawl, kill, Crawler
 
 end # module ToolipsCrawl
