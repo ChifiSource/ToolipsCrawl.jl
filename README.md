@@ -9,6 +9,7 @@ This package builds a web-scraping and web-crawling library atop the [toolips](h
 - [scraping](#scraping)
 - [crawling](#crawling)
 - [filtering](#filtering)
+
 `ToolipsCrawl` usage centers around the `Crawler` type. This constructor is never called directly in conventional usage of the package, **instead** we use the high-level methods for `scrape` and `crawl`.
 - `scrape(f::Function, address::String)` -> `::Crawler`
 - `scrape(f::Function, address::String, components::String ...)` -> `::Crawler`
