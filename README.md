@@ -8,7 +8,7 @@ This package builds a web-scraping and web-crawling library atop the [toolips](h
 ### usage
 - [scraping](#scraping)
 - [crawling](#crawling)
-- [collecting](#collecting)
+- [filtering](#filtering)
 ```julia
 
 ```
@@ -48,5 +48,5 @@ end
 ```
 ##### crawling
 Crawling with `ToolipsCrawl` is done using the `crawl` function. The `crawl` function has two methods, one takes a `Function` and an `String` (address) and the other takes
-##### collecting
+##### filtering
 
