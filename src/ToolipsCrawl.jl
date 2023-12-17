@@ -291,7 +291,7 @@ function get(f::ComponentFilter{:images}, comps::Vector{Servable})
     comps = get(ComponentFilters.bytag, "img")
     get(CompFilters.has_property, "src")
 end
-````
+```
 """
 module ComponentFilters
     using Toolips
