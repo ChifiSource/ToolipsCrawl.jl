@@ -2,7 +2,7 @@ module ToolipsCrawl
 using Toolips
 using Toolips.Crayons
 import ToolipsSession: htmlcomponent, kill!
-import Base: getindex
+import Base: getindex, get
 
 mutable struct Crawler
     address::String
@@ -107,6 +107,43 @@ kill!(crawler::Crawler) = begin
     println(Crayon(foreground = Symbol("light_red"), bold = true, blink = true), "Crawler: crawler stopped")
 end
 
-export scrape, crawl, kill!, Crawler
+module ComponentFilters
+    using Toolips
+    import Base: get
+
+    mutable struct ComponentFilter{T <: Any}
+        value::String
+        ComponentFilter{T}(val::String) where {T <: Any} = new{Symbol(T)}(val)::ComponentFilter{<:Any}
+    end    
+    const bytag = ComponentFilter{:tag}("")
+    const byname = ComponentFilter{:name}("")
+    const has_property = ComponentFilter{:hasproperty}("")
+    get(vec::Vector{Servable}, f::ComponentFilter{<:Any}, val::String) = begin
+        f.value = val
+        get(f, vec)
+    end
+    
+    get(f::ComponentFilter{:tag}, comps::Vector{Servable}) = begin
+        filter(comp -> comp.tag == f.value, comps)
+    end
+    get(f::ComponentFilter{:name}, comps::Vector{Servable}) = begin
+        filter(comp -> comp.name == f.value, comps)
+    end
+    get(f::ComponentFilter{:hasproperty}, comps::Vector{Servable}) = begin
+        filter(comp -> f.value in keys(comp.properties), comps)
+    end
+end
+
+function getindex(c::Crawler, filt::ComponentFilters.ComponentFilter{<:Any}, val::String)
+    get(c.components, filt, val)
+end
+
+get(c::Crawler, f::ComponentFilters.ComponentFilter{<:Any}, val::String) = get(c.components, f, val)
+
+
+get(c::Crawler, f::ComponentFilters.ComponentFilter{<:Any}) = @info "this filter has no `get` binding. See `?ComponentFilters`"
+
+
+export scrape, crawl, kill!, Crawler, ComponentFilters
 
 end # module ToolipsCrawl
