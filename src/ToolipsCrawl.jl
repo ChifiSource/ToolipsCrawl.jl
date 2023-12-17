@@ -1,10 +1,65 @@
+"""
+Created in Decenmber, 2022
+[chifi - an open source software dynasty.](https://github.com/orgs/ChifiSource)
+by team
+- This software is MIT-licensed.
+### ToolipsCrawl
+**ToolipsCrawl** provides a high-level web-scraping and web-crawling interface using the 
+`Toolips` web-development framework's requests and `Component` structures. The package also 
+featurs `ComponentFilters`, a set of premade filters for scraped components. See `?Crawler` for 
+usage
+##### Module Composition
+- **ToolipsCrawl**
+- **ComponentFilters**
+"""
 module ToolipsCrawl
 using Toolips
 using Toolips.Crayons
 import ToolipsSession: htmlcomponent, kill!
 import Base: getindex, get
 
-mutable struct Crawler
+"""
+### abstract type AbstractCrawler
+An `AbstractCrawler` is a web-crawler which can be crawled to using `crawl` and scraped using `scrape`.
+##### Consistencies
+- addresses::Vector{String}
+- crawling::Bool
+- components::Vector{Servable}
+"""
+abstract type AbstractCrawler end
+
+"""
+### Crawler <: AbstractCrawler
+- address**::String**
+- crawling**::Bool**
+- addresses**::Vector{String}**
+- components**::Vector{Servable}**
+---
+The `Crawler` is created by the functions `crawl` and `scrape` and stores components from addresses while navigating 
+to new ones while crawling.  A `Crawler` will be passed through a `Function` provided to `scrape` or `crawl` as an argument.
+```example
+using ToolipsCrawl
+subtitletxt = scrape("https://github.com/ChifiSource/ToolipsCrawl.jl") do c::Crawler
+    text = c["start-of-content"]["class"]
+end
+```
+Indexing with a `String` will yield the `Component` by that name. For more information on `scrape` or `crawl`, see 
+`?scrape` and `?crawl` respectively. Crawlers may also be filtered using `ComponentFilters`. 
+This allows us to get elements by name, by tag, or elements that contain a certain property.
+```example
+using ToolipsCrawl
+using Toolips
+comps = scrape("https://github.com/ChifiSource") do c::Crawler
+    comps = c[ComponentFilters.bytag, "img"]
+    get(comps, ComponentFilters.has_property, "src")
+end
+```
+For more information on these filters, see `?ComponentFilters`
+---
+##### constructors
+- Crawler(address::String)
+"""
+mutable struct Crawler <: AbstractCrawler
     address::String
     crawling::Bool
     addresses::Vector{String}
