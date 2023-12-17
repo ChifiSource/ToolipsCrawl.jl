@@ -8,8 +8,7 @@ This package builds a web-scraping and web-crawling library atop the [toolips](h
 ### usage
 - [scraping](#scraping)
 - [crawling](#crawling)
-- [collecting](#collecting)
-
+- [filtering](#filtering)
 `ToolipsCrawl` usage centers around the `Crawler` type. This constructor is never called directly in conventional usage of the package, **instead** we use the high-level methods for `scrape` and `crawl`.
 - `scrape(f::Function, address::String)` -> `::Crawler`
 - `scrape(f::Function, address::String, components::String ...)` -> `::Crawler`
@@ -30,19 +29,75 @@ julia> ToolipsCrawl.scrape("https://www.accessibility-developer-guide.com/exampl
 Dict{String, String} with 1 entry:
   "heading text" => "Data tables"
 ```
-In the following example, I scrape the `src` from some images, create new image components out of them, and then put them into a `Vector`.
+We can work with `c.components` directly, or index components by name.
+```julia
+myimage = scrape("https://google.com") do c::Crawler
+    googlelogo = findfirst(comp -> comp.tag == "img", c.components)
+    img("googlelogo", src = "https://google.com" * c.components[googlelogo]["src"])
+end
+```
+In the following example, we scrape the `src` from some images, create new image components out of them, and then put them into a `Vector`. I do so using by making a request and then filtering the results into a return using the [ComponentFilters](#filtering) API. 
+```julia
+comps = scrape("https://github.com/ChifiSource") do c::Crawler
+    comps = c[ComponentFilters.bytag, "img"]
+    get(comps, ComponentFilters.has_property, "src")
+end
+```
+We could also redo the last example with this filtering syntax, for example.
+```julia
+comps = scrape("https://google.com") do c::Crawler
+    comps = c[ComponentFilters.bytag, "img"]
+    get(comps, ComponentFilters.has_property, "src")[1]
+end
+```
+##### crawling
+Crawling with `ToolipsCrawl` is done using the `crawl` function. The `crawl` function has two methods, one takes a `Function` and an `String` (address) and the other takes multiple Strings, (addresses). Crawling works the same as scraping, only it is recurring and searches for additional addresses on each page.
 ```julia
 images = Vector{Servable}()
-scrape("https://github.com/ChifiSource") do c::Crawler
+newdiv = div("parentcont"); newdiv[:children] = images
+i = 0
+crawler1 = crawl("https://github.com/ChifiSource") do c::Crawler
     f = findall(comp -> comp.tag == "img", c.components)
     [begin
         comp = c.components[position]
         if "src" in keys(comp.properties)
-              push!(images, img("ex", src = comp["src"]))
+            image = img("ex", src = comp["src"], width = 50)
+            style!(image, "display" => "inline-block")
+            push!(images, image)
         end
     end for position in f]
 end
+@async while crawler1.crawling
+    display(newdiv)
+    sleep(5)
+end
 ```
+This example will continuously accumulate images and add them to a constantly displaying div.
+##### filtering
+`ToolipsCrawl` provides a basic filtering API for the `Vector{Servable}` type. This API revolves around the `Toolips.get` `Function`, which we provide with a `Crawler`, a `ComponentFilter`, and a `String`. The `ComponentFilter` determines the operation and the `String` determines the value. This may also be done by simply getting the index of a `Crawler` with a `ComponentFilter`
+```julia
+comps = scrape("https://github.com/ChifiSource/Olive.jl") do c::Crawler
+    codes = c[ComponentFilters.bytag, "code"]
+    codes
+end
+```
+This module provides three 
+default filters:
+- `ComponentFilters.bytag`
+- `ComponentFilters.byname`
+- `ComponentFilters.has_property`
+```example
+comps = scrape("https://github.com/ChifiSource") do c::Crawler
+    comps = c[ComponentFilters.bytag, "img"]
+    get(comps, ComponentFilters.has_property, "src")
+end
+```
+Implementing a new filter is simple; just extend `get(::ComponentFilter{<:Any}, ::Vector{Servable})`.
+```example
+using Toolips
+using ToolipsCrawl
+import Toolips: get
+=======
 ##### crawling
 Crawling with `ToolipsCrawl` is done using the `crawl` function. The `crawl` function has two methods, one takes a `Function` and an `String` (address) and the other takes multiple addresses.
 ```julia
@@ -61,5 +116,3 @@ crawler1 = crawl("https://github.com/ChifiSource") do c::Crawler
     end for position in f]
 end
 ```
-##### collecting
-
