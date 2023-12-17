@@ -1,15 +1,14 @@
 <div align="center">
- <img id="mainimage" hidden="hello:)" src="https://github.com/ChifiSource/image_dump/blob/main/toolips/toolipscrawl.png"></img>
+ <img id="mainimage" src="https://github.com/ChifiSource/image_dump/blob/main/toolips/toolipscrawl.png"></img>
+ <h6 id="crawlsub">toolips crawl provides web-crawling for all!</h6>
  </div>
- 
- ##### toolips crawl provides web-crawling for all!
+
 This package builds a web-scraping and web-crawling library atop the [toolips](https://github.com/ChifiSource/Toolips.jl) web-development framework. This package prominently features high-level syntax atop the `Toolips` `Component` structure.
 
 ### usage
 - [scraping](#scraping)
 - [crawling](#crawling)
 - [filtering](#filtering)
----
 `ToolipsCrawl` usage centers around the `Crawler` type. This constructor is never called directly in conventional usage of the package, **instead** we use the high-level methods for `scrape` and `crawl`.
 - `scrape(f::Function, address::String)` -> `::Crawler`
 - `scrape(f::Function, address::String, components::String ...)` -> `::Crawler`
@@ -98,9 +97,22 @@ Implementing a new filter is simple; just extend `get(::ComponentFilter{<:Any}, 
 using Toolips
 using ToolipsCrawl
 import Toolips: get
-
-function get(f::ComponentFilter{:images}, comps::Vector{Servable})
-    comps = get(ComponentFilters.bytag, "img")
-    get(CompFilters.has_property, "src")
+=======
+##### crawling
+Crawling with `ToolipsCrawl` is done using the `crawl` function. The `crawl` function has two methods, one takes a `Function` and an `String` (address) and the other takes multiple addresses.
+```julia
+images = Vector{Servable}()
+newdiv = div("parentcont"); newdiv[:children] = images
+i = 0
+crawler1 = crawl("https://github.com/ChifiSource") do c::Crawler
+    f = findall(comp -> comp.tag == "img", c.components)
+    [begin
+        comp = c.components[position]
+        if "src" in keys(comp.properties)
+            image = img("ex", src = comp["src"], width = 50)
+            style!(image, "display" => "inline-block")
+            push!(images, image)
+        end
+    end for position in f]
 end
 ```
