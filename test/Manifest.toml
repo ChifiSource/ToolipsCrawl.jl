@@ -2,7 +2,7 @@
 
 julia_version = "1.11.5"
 manifest_format = "2.0"
-project_hash = "5e2f9082ab16f60f66ca453746e9b802f6b09486"
+project_hash = "62507fb0343e967aef8a08676adf801f03bbfad2"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -231,6 +231,12 @@ deps = ["Crayons", "HTTP", "ParametricProcesses", "Pkg", "Sockets", "ToolipsServ
 git-tree-sha1 = "3084eed570f9e4483f9bd61427c8f4496839b38d"
 uuid = "a47e2ad8-fcf7-417c-9746-32b9bdf220bd"
 version = "0.3.10"
+
+[[deps.ToolipsCrawl]]
+deps = ["Toolips"]
+path = ".."
+uuid = "bc5540b7-af16-444d-8eba-940cc7c9cf32"
+version = "0.2.0"
 
 [[deps.ToolipsServables]]
 deps = ["Base64", "Markdown"]

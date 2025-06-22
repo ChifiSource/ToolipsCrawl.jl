@@ -1,0 +1,11 @@
+name = "test"
+uuid = "0f46b961-94e0-4053-9b3a-3f45e0a06351"
+authors = ["emmac <emmaccode@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+ToolipsCrawl = "bc5540b7-af16-444d-8eba-940cc7c9cf32"
+
+[compat]
+Test = "1.11.0"

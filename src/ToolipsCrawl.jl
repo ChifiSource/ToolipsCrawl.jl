@@ -4,23 +4,44 @@ Created in December, 2023 by
 - This software is MIT-licensed.
 ### ToolipsCrawl
 **ToolipsCrawl** provides a high-level web-scraping and web-crawling interface using the 
-`Toolips` web-development framework's requests and `Component` structures. The package also 
-featurs `ComponentFilters`, a set of premade filters for scraped components. See `?Crawler` for 
-usage
+`Toolips` web-development framework's requests and `Component` structures.
+```julia
+using ToolipsCrawl
+titles = []
+crawl("https://chifidocs.com") do crawler::Crawler
+    title_comps = get_by_tag(crawler, "title")
+    if length(title_comps) > 0
+        @info "scraped title from " * crawler.address
+        push!(titles, title_comps[1][:text])
+    end
+end
+```
 ##### Module Composition
 - **ToolipsCrawl**
-- **ComponentFilters**
+- `AbstractCrawler`
+- `Crawler`
+- `scrape!`
+- `crawl!`
+- `try_scrape_recursive!`
+- `scrape`
+- `crawl`
+- `kill!(::Crawler)`
+- `get_by_name`
+- `get_by_tag`
 """
 module ToolipsCrawl
 using Toolips
 using Toolips.Crayons
-import ToolipsSession: htmlcomponent, kill!
-import Base: getindex, get
+using Toolips.Components
+import Toolips.Components: gen_ref
+import Base: getindex
 
 """
-### abstract type AbstractCrawler
+```julia
+abstract type AbstractCrawler
+```
 An `AbstractCrawler` is a web-crawler which can be crawled to using `crawl` and scraped using `scrape`.
-##### Consistencies
+
 - addresses::Vector{String}
 - crawling::Bool
 - components::Vector{Servable}
@@ -28,236 +49,240 @@ An `AbstractCrawler` is a web-crawler which can be crawled to using `crawl` and 
 abstract type AbstractCrawler end
 
 """
-### Crawler <: AbstractCrawler
+```julia
+Crawler <: AbstractCrawler
+```
 - address**::String**
 - crawling**::Bool**
 - addresses**::Vector{String}**
 - components**::Vector{Servable}**
----
 The `Crawler` is created by the functions `crawl` and `scrape` and stores components from addresses while navigating 
-to new ones while crawling.  A `Crawler` will be passed through a `Function` provided to `scrape` or `crawl` as an argument.
-```example
-using ToolipsCrawl
-subtitletxt = scrape("https://github.com/ChifiSource/ToolipsCrawl.jl") do c::Crawler
-    text = c["start-of-content"]["class"]
-end
-```
+to new ones while crawling.  A `Crawler` will be passed through a `Function` provided to `scrape` or `crawl` as an argument. 
 Indexing with a `String` will yield the `Component` by that name. A `Crawler` may be stopped with `kill!`. 
 For more information on `scrape` or `crawl`, see `?scrape` and `?crawl` respectively. Crawlers may also be 
 filtered using `ComponentFilters`. We are able to filter by getting index with a filter and a value to filter with.
 This allows us to get elements by name, by tag, or elements that contain a certain property.
 ```example
 using ToolipsCrawl
-using Toolips
-comps = scrape("https://github.com/ChifiSource") do c::Crawler
-    comps = c[ComponentFilters.bytag, "img"]
-    get(comps, ComponentFilters.has_property, "src")
+using ToolipsCrawl.Components
+rows = []
+scrape("https://github.com/ChifiSource") do c::Crawler
+    current_rows = get_by_tag(c, "td")
+    for row::Component{:td} in current_rows
+        push!(rows, row[:text])
+    end
+end
+```
+```julia
+using ToolipsCrawl
+titles = []
+crawl("https://chifidocs.com") do crawler::Crawler
+    title_comps = get_by_tag(crawler, "title")
+    if length(title_comps) > 0
+        @info "scraped title from " * crawler.address
+        push!(titles, title_comps[1][:text])
+    end
 end
 ```
 For more information on these filters, see `?ComponentFilters`
----
-##### constructors
-- Crawler(address::String)
+```julia
+Crawler(address::String)
+```
 """
 mutable struct Crawler <: AbstractCrawler
     address::String
     crawling::Bool
     addresses::Vector{String}
-    components::Vector{Servable}
-    Crawler(address::String) = new(address, false, Vector{String}(), Vector{Servable}())
+    raw::String
+    Crawler(address::String) = new(address, false, Vector{String}(), "")
 end
 
 getindex(c::Crawler, name::String) = getindex(c.components, name)
 
+"""
+```julia
+scrape!(::Crawler) -> ::Crawler
+```
+Scrapes the current crawler; performs the core GET request and updates 
+`Crawler.raw`.
+"""
 function scrape!(crawler::Crawler)
-    data::String = Toolips.get(crawler.address)
-    crawler.components = htmlcomponent(data, nonames = true)
+    crawler.raw = Toolips.get(crawler.address)
     crawler
-end
-
-function scrape!(crawler::Crawler, read::Vector{String})
-    data::String = Toolips.get(crawler.address)
-    crawler.components = htmlcomponent(data, read)
-    crawler
-end
-
-function crawl!(crawler::Crawler)
-    scrape!(crawler)
-    allprops = findall(c::Component{<:Any} -> "href" in keys(c.properties), crawler.components)
-    [begin
-        comp = crawler.components[prop]
-        lnk = comp["href"]
-        if contains(lnk, "http")
-            push!(crawler.addresses, comp["href"])
-        elseif contains(lnk, "/")
-            addend = findfirst("://", crawler.address)
-            targetend = findnext("/", crawler.address, maximum(addend) + 1)
-            push!(crawler.addresses, crawler.address[1:maximum(addend)] * crawler.address[maximum(addend) + 1:targetend[1] - 1] * lnk)
-        end
-    end for prop in allprops]
 end
 
 """
-### ToolipsCrawl
 ```julia
-scrape(f::Function, address::String) -> ::Any
+crawl!(crawler::Crawler) -> ::Nothing
 ```
----
-Scrapes `address`, providing a `Crawler` with components from `Address` to `f`.
-```example
-subtitletxt = scrape("https://github.com/ChifiSource/ToolipsCrawl.jl") do c::Crawler
-    text = c["start-of-content"]["class"]
+`crawl!` will search for new available addresses to crawl to inside of `Crawler.raw`. This 
+    is done after scraping with `scrape!` whenever we are crawling with `crawl`. Note that 
+    the mutating equivalents, `scrape!` and `crawl!`, are not usually called directly.
+See also: `crawl`, `scrape!`, `Crawler`, `ToolipsCrawl`
+"""
+function crawl!(crawler::Crawler)
+    allprops = findall("href=\"", crawler.raw)
+    for proplocation in allprops
+        start = maximum(proplocation) + 1
+        href_link_end = findnext("\"", crawler.raw, start)
+lnk = try
+	crawler.raw[start:prevind(crawler.raw, maximum(href_link_end))]
+catch
+	try
+		crawler.raw[start:prevind(crawler.raw, maximum(href_link_end), 2)]
+	catch
+		crawler.raw[prevind(crawler.raw, start):prevind(crawler.raw, maximum(href_link_end), 2)]
+	end
 end
 
-myimage = scrape("https://google.com") do c::Crawler
-    googlelogo = findfirst(comp -> comp.tag == "img", c.components)
-    img("googlelogo", src = "https://google.com" * c.components[googlelogo]["src"])
+        if contains(lnk, ".jpg") || contains(lnk, ".png")
+            continue
+        elseif ~(contains(lnk, "http"))
+            continue
+        end
+        push!(crawler.addresses, lnk)
+    end
+    nothing::Nothing
 end
-````
+
+"""
+```julia
+scrape(f::Function, address::String) -> ::Nothing
+```
+Scrapes `address`, providing a `Crawler` with components from `Address` to `f`.
+```example
+scrape("https://chifidocs.com") do crawler::Crawler
+    header = get_by_name(crawler, "welcome-1")
+    @info header[1][:text]
+end
+```
 """
 function scrape(f::Function, address::String)
     crawler::Crawler = Crawler(address)
     f(scrape!(crawler))
+    nothing::Nothing
 end
 
 """
 ```julia
-scrape(f::Function, address::String, components::String ...) -> ::Any
+try_scrape_recursive!(crawler::Crawler) -> ::Bool
 ```
----
-Scrapes only component names in `components` at `address`, providing a `Crawler` with components from `Address` to `f`
-```example
-subtitletxt = scrape("https://github.com/ChifiSource/ToolipsCrawl.jl", "start-of-content") do c::Crawler
-    text = c["start-of-content"]["class"]
-end
-````
+Continues to scrape addresses in `Crawler.addresses` recursively until one works. 
+Returns a `Bool`; `true` means that a page was successfully scraped and `false` means 
+we ran out of addresses. This is used internally by `crawl` so that errors aren't produced anytime 
+a broken or dead URL is provided.
 """
-function scrape(f::Function, address::String, components::String ...)
-    crawler::Crawler = Crawler(address)
-    f(scrape!(crawler, [components ...]))
+function try_scrape_recursive!(crawler::Crawler)
+    try
+        scrape!(crawler)
+    catch
+        if length(crawler.addresses) == 1
+            return(false)
+        end
+        deleteat!(crawler.addresses, 1)
+        crawler.address = crawler.addresses[1]
+        return(try_scrape_recursive!(crawler))
+    end
+    true
 end
 
 """
-### ToolipsCrawl
 ```julia
-crawl(f::Function, address::String; show_address::Bool = false) -> ::Crawler
+crawl(f::Function, ...; ...) -> ::Nothing
 ```
----
-`crawl` scrapes `address` then calls `f` on a `Crawler` with the scraped components, then crawls to addresses found on 
+`crawl` scrapes `address` using `scrape!`, crawls using `crawl!` then calls `f` on the `Crawler`. Next, it crawls to addresses found on 
 that page, repeating the function call until `kill!` is used or there are no remaining addresses. We may also provide multiple addresses. 
 `show_address` determines whether or not the crawler should print each address on request.
-```example
-using Toolips
-using ToolipsCrawl
-# collects images forever
-images = Vector{Servable}()
-newdiv = div("parentcont"); newdiv[:children] = images
-i = 0
-crawler1 = crawl("https://github.com/ChifiSource") do c::Crawler
-    f = findall(comp -> comp.tag == "img", c.components)
-    [begin
-        comp = c.components[position]
-        if "src" in keys(comp.properties)
-            image = img("ex", src = comp["src"], width = 50)
-            style!(image, "display" => "inline-block")
-            push!(images, image)
-        end
-    end for position in f]
-end
-@async while crawler1.crawling
-    display(newdiv)
-    sleep(5)
-end
-````
-"""
-function crawl(f::Function, address::String; show_address::Bool = false)
-    crawler::Crawler = Crawler(address)
-    crawler.crawling = true
-    println(Crayon(foreground = Symbol("light_magenta"), bold = true), "Crawler: crawler started at $address")
-    @async while crawler.crawling
-        if show_address
-            println(crawler.address)
-        end
-        try
-            crawl!(crawler)
-        catch
-
-        end
-        try
-            f(crawler)
-        catch e
-            break
-            crawler.crawling = false
-            throw(e)
-        end
-        if length(crawler.addresses) < 1
-            crawler.crawling = false
-            println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped")
-            break
-        end
-        crawler.address = crawler.addresses[1]
-        deleteat!(crawler.addresses, 1)
-    end
-    crawler::Crawler
-end
-
-"""
 ```julia
-crawl(f::Function, address::String ...) -> ::Crawler
+crawl(f::Function, address::String; show_address::Bool = false) -> ::Crawler
+crawl(f::Function, address::String; keys ...) -> ::Crawler
+crawl(f::Function, address::String ...; keyargs ...)
 ```
----
-`crawl` scrapes each `address` then calls `f` on a `Crawler` with the scraped components, then crawls to addresses found on 
-that page, repeating the function call until `kill!` is used or there are no remaining addresses.
 ```example
-using Toolips
 using ToolipsCrawl
-# collects images forever
-images = Vector{Servable}()
-newdiv = div("parentcont"); newdiv[:children] = images
-i = 0
-crawler1 = crawl("https://github.com/ChifiSource") do c::Crawler
-    f = findall(comp -> comp.tag == "img", c.components)
-    [begin
-        comp = c.components[position]
-        if "src" in keys(comp.properties)
-            image = img("ex", src = comp["src"], width = 50)
-            style!(image, "display" => "inline-block")
-            push!(images, image)
-        end
-    end for position in f]
+titles = []
+crawl("https://chifidocs.com") do crawler::Crawler
+    title_comps = get_by_tag(crawler, "title")
+    if length(title_comps) > 0
+        @info "scraped title from " * crawler.address
+        push!(titles, title_comps[1][:text])
+    end
 end
-@async while crawler1.crawling
-    display(newdiv)
-    sleep(5)
-end
-````
+```
 """
-function crawl(f::Function, address::String ...)
-    crawler::Crawler = Crawler(address[1])
-    crawler.addresses = [add for add in address[2:length(address)]]
+function crawl(f::Function, crawler::Crawler; show_address::Bool = false, async::Bool = true)
     crawler.crawling = true
-    println(Crayon(foreground = Symbol("light_magenta"), bold = true), "Crawler: crawler started at $address")
-    @async while crawler.crawling
-        crawl!(crawler)
-        f(crawler)
-        if length(crawler.addresses) < 1
-            crawler.crawling = false
-            println(Crayon(foreground = Symbol("light_red"), bold = true, blink = true), "Crawler: crawler stopped")
-            break
+    println(Crayon(foreground = Symbol("light_magenta"), bold = true), "Crawler: crawler started at $(crawler.address)")
+    if ~(async)
+        while crawler.crawling
+            if show_address
+                println(crawler.address)
+            end
+            success = try_scrape_recursive!(crawler)
+            if ~(success)
+                crawler.crawling = false
+                println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped (out of addresses)")
+                break
+            end
+            crawl!(crawler)
+            try
+                f(crawler)
+            catch e
+                crawler.crawling = false
+                throw(e)
+            end
+            if length(crawler.addresses) < 1
+                crawler.crawling = false
+                println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped (out of addresses)")
+                break
+            end
+            crawler.address = crawler.addresses[1]
+            deleteat!(crawler.addresses, 1)
         end
-        crawler.address = crawler.addresses[1]
-        deleteat!(crawler.addresses, 1)
+    else
+        @async while crawler.crawling
+            if show_address
+                println(crawler.address)
+            end
+            success = try_scrape_recursive!(crawler)
+            if ~(success)
+                crawler.crawling = false
+                println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped (out of addresses)")
+                break
+            end
+            crawl!(crawler)
+            try
+                f(crawler)
+            catch e
+                crawler.crawling = false
+                throw(e)
+            end
+            if length(crawler.addresses) < 1
+                crawler.crawling = false
+                println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped (out of addresses)")
+                break
+            end
+            crawler.address = crawler.addresses[1]
+            deleteat!(crawler.addresses, 1)
+        end
     end
     crawler::Crawler
 end
 
+crawl(f::Function, address::String; keys ...) = crawl(f, Crawler(address); keys ...)
+
+function crawl(f::Function, address::String ...; keyargs ...)
+    crawler::Crawler = Crawler(address[1])
+    crawler.addresses = [address[2:end] ...]
+    crawl(f, crawler; keyargs ...)
+end
+
 """
-### ToolipsCrawl
 ```julia
 kill!(crawler::Crawler) -> ::Nothing
 ```
----
 Stops an active `Crawler`.
+- See also: `get_by_tag`, `crawl`, `crawl!`, `Crawler`, `get_by_name`
 """
 kill!(crawler::Crawler) = begin
     crawler.crawling = false
@@ -265,71 +290,99 @@ kill!(crawler::Crawler) = begin
 end
 
 """
-Created in December, 2022 by
-[chifi - an open source software dynasty.](https://github.com/orgs/ChifiSource)
-- This software is MIT-licensed.
-### ComponentFilters
-**ComponentFilters** provides some simple premade filters for the `Vector{Servable}` type from `Toolips`.
-This module extends `Toolips.get` to pull values based on aspects of a `Component`. This module provides three 
-default filters:
-- `ComponentFilters.bytag`
-- `ComponentFilters.byname`
-- `ComponentFilters.has_property`
-```example
-comps = scrape("https://github.com/ChifiSource") do c::Crawler
-    comps = c[ComponentFilters.bytag, "img"]
-    get(comps, ComponentFilters.has_property, "src")
-end
+```julia
+get_by_tag(crawler::Crawler, tag::String) -> ::Vector{AbstractComponent}
 ```
-Implementing a new filter is simple; just extend `get(::ComponentFilter{<:Any}, ::Vector{Servable})`.
-```example
-using Toolips
-using ToolipsCrawl
-import Toolips: get
-
-function get(f::ComponentFilter{:images}, comps::Vector{Servable})
-    comps = get(ComponentFilters.bytag, "img")
-    get(CompFilters.has_property, "src")
+Creates a `Vector` of components from the page currently being scraped, each `Component` 
+will have the tag `tag`. This is meant to be called within a `Function` provided to `scrape` or 
+`crawl`.
+```julia
+crawl("https://chifidocs.com") do crawler::Crawler
+    titles = get_by_tag(crawler, "title")
+    if length(titles) > 0
+        push!(titles, titles[1][:text])
+    end
 end
 ```
 """
-module ComponentFilters
-    using Toolips
-    import Base: get
-
-    mutable struct ComponentFilter{T <: Any}
-        value::String
-        ComponentFilter{T}(val::String) where {T <: Any} = new{Symbol(T)}(val)::ComponentFilter{<:Any}
-    end    
-    const bytag = ComponentFilter{:tag}("")
-    const byname = ComponentFilter{:name}("")
-    const has_property = ComponentFilter{:hasproperty}("")
-    get(vec::Vector{Servable}, f::ComponentFilter{<:Any}, val::String) = begin
-        f.value = val
-        get(f, vec)
+function get_by_tag(crawler::Crawler, tag::String)
+    positions = findall("<$tag", crawler.raw)
+    tagsymb = Symbol(tag)
+    components = Vector{AbstractComponent}()
+    for pos in positions
+        arg_start = maximum(pos) + 2
+        stop_tag::Int64 = maximum(findnext(">", crawler.raw, arg_start))
+        tagend = findnext("</$tag>", crawler.raw, stop_tag)
+        propsplits = split(crawler.raw[arg_start:stop_tag - 1], "' ")
+        comp = Component{tagsymb}("-")
+        
+        if isnothing(tagend)
+            text = ""
+        else
+            text = crawler.raw[stop_tag + 1:minimum(tagend) - 1]
+        end
+        for prop in propsplits
+            keyval = split(replace(prop, "'" => ""), "=")
+            if length(keyval) == 1
+                continue
+            end
+            push!(comp.properties, Symbol(keyval[1]) => keyval[2])
+        end
+        comp[:text] = text
+        push!(components, comp)
     end
-    
-    get(f::ComponentFilter{:tag}, comps::Vector{Servable}) = begin
-        filter(comp -> comp.tag == f.value, comps)
-    end
-    get(f::ComponentFilter{:name}, comps::Vector{Servable}) = begin
-        filter(comp -> comp.name == f.value, comps)
-    end
-    get(f::ComponentFilter{:hasproperty}, comps::Vector{Servable}) = begin
-        filter(comp -> f.value in keys(comp.properties), comps)
-    end
+    return(components)::Vector{AbstractComponent}
 end
 
-function getindex(c::Crawler, filt::ComponentFilters.ComponentFilter{<:Any}, val::String)
-    get(c.components, filt, val)
+"""
+```julia
+get_by_name(crawler::Crawler, name::String) -> ::Vector{AbstractComponent}
+```
+Creates a `Vector` of components from the page currently being scraped, will only grab components with a specific ID.
+ This is meant to be called within a `Function` provided to `scrape` or 
+`crawl`.
+```julia
+scrape("https://chifidocs.com") do crawler::Crawler
+    header = get_by_name(crawler, "welcome-1")
+    @info header[1][:text]
+end
+```
+See also: `get_by_tag`, `crawl`, `scrape`, `Crawler`, `ToolipsCrawl`
+"""
+function get_by_name(crawler::Crawler, name::String)
+    raw = crawler.raw
+    found_positions = findall("id='$name'", raw)
+    if isnothing(found_positions) || length(found_positions) == 0
+        @info "id=\"$name\""
+        @info crawler.raw
+        return(Vector{AbstractComponent}())
+    end
+    components = Vector{AbstractComponent}()
+    for found_position in found_positions
+        found_position = minimum(found_position)
+        tag_begin::UnitRange{Int64} = findprev("<", raw, found_position)
+        stop_tag::Int64 = maximum(findnext(">", raw, found_position))
+        tag::Symbol = Symbol(raw[minimum(tag_begin) + 1:found_position - 2])
+        tagend = findnext("</$tag>", raw, found_position)
+        if isnothing(tagend)
+            text = ""
+        else
+            text::String = raw[stop_tag + 1:minimum(tagend) - 1]
+        end
+        text = ToolipsServables.rep_in(text)
+        splits::Vector{SubString} = split(raw[found_position:stop_tag], "' ")
+        push!(components, Component{tag}(name, text = text, [begin
+            splits = split(property, "=")
+            if length(splits) < 2
+                "" => ""
+            else
+                replace(string(splits[1]), "'" => "", ">" => "", "<" => "") => replace(string(splits[2]), 
+                "\"" => "", ">" => "", "<" => "")
+            end
+        end for property in splits] ...))
+    end
+    components::Vector{AbstractComponent}
 end
 
-get(c::Crawler, f::ComponentFilters.ComponentFilter{<:Any}, val::String) = get(c.components, f, val)
-
-
-get(c::Crawler, f::ComponentFilters.ComponentFilter{<:Any}) = @info "this filter has no `get` binding. See `?ComponentFilters`"
-
-
-export scrape, crawl, kill!, Crawler, ComponentFilters
-
-end # module ToolipsCrawl
+export crawl, scrape, Crawler, get_by_tag, get_by_name, kill!
+end
