@@ -20,8 +20,9 @@ usage
 """
 module ToolipsCrawl
 using Toolips
-using Toolips.components
-import Toolips.components: gen_ref
+using Toolips.Crayons
+using Toolips.Components
+import Toolips.Components: gen_ref
 import Base: getindex, get
 
 """
@@ -85,12 +86,20 @@ function scrape!(crawler::Crawler)
 end
 
 function crawl!(crawler::Crawler)
-    scrape!(crawler)
     allprops = findall("href=\"", crawler.raw)
     for proplocation in allprops
         start = maximum(proplocation) + 1
         href_link_end = findnext("\"", crawler.raw, start)
-        lnk = crawler.raw[start:href_link_end - 1]
+lnk = try
+	crawler.raw[start:prevind(crawler.raw, maximum(href_link_end))]
+catch
+	try
+		crawler.raw[start:prevind(crawler.raw, maximum(href_link_end), 2)]
+	catch
+		crawler.raw[prevind(crawler.raw, start):prevind(crawler.raw, maximum(href_link_end), 2)]
+	end
+end
+
         if contains(lnk, ".jpg") || contains(lnk, ".png")
             continue
         elseif ~(contains(lnk, "http"))
@@ -137,6 +146,20 @@ function scrape(f::Function, address::String, components::String ...)
     f(scrape!(crawler, [components ...]))
 end
 
+function try_scrape_recursive!(crawler::Crawler)
+    try
+        scrape!(crawler)
+    catch
+        if length(crawler.addresses) == 1
+            return(false)
+        end
+        deleteat!(crawler.addresses, 1)
+        crawler.address = crawler.addresses[1]
+        return(try_scrape_recursive!(crawler))
+    end
+    true
+end
+
 """
 ```julia
 crawl(f::Function, address::String; show_address::Bool = false) -> ::Crawler
@@ -151,16 +174,8 @@ using ToolipsCrawl
 images = Vector{Servable}()
 newdiv = div("parentcont"); newdiv[:children] = images
 i = 0
-crawler1 = crawl("https://github.com/ChifiSource") do c::Crawler
-    f = findall(comp -> comp.tag == "img", c.components)
-    [begin
-        comp = c.components[position]
-        if "src" in keys(comp.properties)
-            image = img("ex", src = comp["src"], width = 50)
-            style!(image, "display" => "inline-block")
-            push!(images, image)
-        end
-    end for position in f]
+@async crawl("https://github.com/ChifiSource") do c::Crawler
+
 end
 @async while crawler1.crawling
     display(newdiv)
@@ -172,31 +187,31 @@ function crawl(f::Function, address::String; show_address::Bool = false)
     crawler::Crawler = Crawler(address)
     crawler.crawling = true
     println(Crayon(foreground = Symbol("light_magenta"), bold = true), "Crawler: crawler started at $address")
-    @async while crawler.crawling
+    while crawler.crawling
         if show_address
             println(crawler.address)
         end
-        try
-            crawl!(crawler)
-        catch
-
+        success = try_scrape_recursive!(crawler)
+        if ~(success)
+            crawler.crawling = false
+            println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped (out of addresses)")
+            break
         end
+        crawl!(crawler)
         try
             f(crawler)
         catch e
-            break
             crawler.crawling = false
             throw(e)
         end
         if length(crawler.addresses) < 1
             crawler.crawling = false
-            println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped")
+            println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped (out of addresses)")
             break
         end
         crawler.address = crawler.addresses[1]
         deleteat!(crawler.addresses, 1)
     end
-    crawler::Crawler
 end
 
 """
@@ -261,13 +276,55 @@ end
 
 function get_by_tag(crawler::Crawler, tag::String)
     positions = findall("<$tag", crawler.raw)
+    tagsymb = Symbol(tag)
+    components = Vector{AbstractComponent}()
+    for pos in positions
+        arg_start = maximum(pos) + 2
+        stop_tag::Int64 = maximum(findnext(">", crawler.raw, arg_start))
+        tagend = findnext("</$tag>", crawler.raw, stop_tag)
+        propsplits = split(crawler.raw[arg_start:stop_tag - 1], "\" ")
+        comp = Component{tagsymb}("-")
+        for prop in propsplits
+            keyval = split(replace(prop, "\"" => ""), "=")
+            if length(keyval) == 1
+                continue
+            end
+            push!(comp.properties, Symbol(keyval[1]) => keyval[2])
+        end
+        push!(components, comp)
+    end
+    return(components)::Vector{AbstractComponent}
 end
 
 function get_by_name(crawler::Crawler, name::String)
-    found_position = findall("id=\"$component_name\"", crawler.raw)
+    found_positions = findall("id=\"$component_name\"", crawler.raw)
     if isnothing(found_position) || length(found_position) == 0
         return(Vector{AbstractComponent}())
     end
-    
+    components = Vector{AbstractComponent}()
+    for found_position in found_positions
+        tag_begin::UnitRange{Int64} = findprev("<", raw, found_position)
+        stop_tag::Int64 = maximum(findnext(">", raw, found_position))
+        tag::Symbol = Symbol(raw[minimum(tag_begin) + 1:found_position - 2])
+        tagend = findnext("</$tag>", raw, found_position)
+        if isnothing(tagend)
+            text = ""
+        else
+            text::String = raw[stop_tag + 1:minimum(tagend) - 1]
+        end
+        text = rep_in(text)
+        splits::Vector{SubString} = split(raw[found_position:stop_tag], "\" ")
+        push!(components, Component{tag}(component_name, text = text, [begin
+            splits = split(property, "=")
+            if length(splits) < 2
+                "" => ""
+            else
+                replace(string(splits[1]), "\"" => "", ">" => "", "<" => "") => replace(string(splits[2]), 
+                "\"" => "", ">" => "", "<" => "")
+            end
+        end for property in splits] ...))
+    end
+    components::Vector{AbstractComponent}
 end
-
+export crawl, scrape, Crawler, get_by_tag, get_by_name
+end
