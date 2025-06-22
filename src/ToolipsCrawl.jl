@@ -4,15 +4,25 @@ Created in December, 2023 by
 - This software is MIT-licensed.
 ### ToolipsCrawl
 **ToolipsCrawl** provides a high-level web-scraping and web-crawling interface using the 
-`Toolips` web-development framework's requests and `Component` structures. The package also 
-featurs `ComponentFilters`, a set of premade filters for scraped components. See `?Crawler` for 
-usage
+`Toolips` web-development framework's requests and `Component` structures.
+```julia
+using ToolipsCrawl
+titles = []
+crawl("https://chifidocs.com") do crawler::Crawler
+    titles = get_by_tag(crawler, "title")
+    if length(titles) > 0
+        @info "scraped title from " * crawler.address
+        push!(titles, titles[1][:text])
+    end
+end
+```
 ##### Module Composition
 - **ToolipsCrawl**
 - `AbstractCrawler`
 - `Crawler`
 - `scrape!`
 - `crawl!`
+- `try_scrape_recursive!`
 - `scrape`
 - `crawl`
 - `kill!(::Crawler)`
@@ -54,9 +64,24 @@ filtered using `ComponentFilters`. We are able to filter by getting index with a
 This allows us to get elements by name, by tag, or elements that contain a certain property.
 ```example
 using ToolipsCrawl
-using Toolips
-comps = scrape("https://github.com/ChifiSource") do c::Crawler
-
+using ToolipsCrawl.Components
+rows = []
+scrape("https://github.com/ChifiSource") do c::Crawler
+    current_rows = get_by_tag(c, "td")
+    for row::Component{:td} in current_rows
+        push!(rows, row[:text])
+    end
+end
+```
+```julia
+using ToolipsCrawl
+titles = []
+crawl("https://chifidocs.com") do crawler::Crawler
+    titles = get_by_tag(crawler, "title")
+    if length(titles) > 0
+        @info "scraped title from " * crawler.address
+        push!(titles, titles[1][:text])
+    end
 end
 ```
 For more information on these filters, see `?ComponentFilters`
@@ -74,11 +99,27 @@ end
 
 getindex(c::Crawler, name::String) = getindex(c.components, name)
 
+"""
+```julia
+scrape!(::Crawler) -> ::Crawler
+```
+Scrapes the current crawler; performs the core GET request and updates 
+`Crawler.raw`.
+"""
 function scrape!(crawler::Crawler)
     crawler.raw = Toolips.get(crawler.address)
     crawler
 end
 
+"""
+```julia
+crawl!(crawler::Crawler) -> ::Nothing
+```
+`crawl!` will search for new available addresses to crawl to inside of `Crawler.raw`. This 
+    is done after scraping with `scrape!` whenever we are crawling with `crawl`. Note that 
+    the mutating equivalents, `scrape!` and `crawl!`, are not usually called directly.
+See also: `crawl`, `scrape!`, `Crawler`, `ToolipsCrawl`
+"""
 function crawl!(crawler::Crawler)
     allprops = findall("href=\"", crawler.raw)
     for proplocation in allprops
@@ -101,36 +142,36 @@ end
         end
         push!(crawler.addresses, lnk)
     end
+    nothing::Nothing
 end
 
 """
 ```julia
-scrape(f::Function, address::String) -> ::Any
+scrape(f::Function, address::String) -> ::Nothing
 ```
 Scrapes `address`, providing a `Crawler` with components from `Address` to `f`.
 ```example
-
+scrape("https://chifidocs.com") do crawler::Crawler
+    header = get_by_id(crawler, "welcome-1")
+    @info header[1][:text]
+end
 ```
 """
 function scrape(f::Function, address::String)
     crawler::Crawler = Crawler(address)
     f(scrape!(crawler))
+    nothing::Nothing
 end
 
 """
 ```julia
-scrape(f::Function, address::String, components::String ...) -> ::Any
+try_scrape_recursive!(crawler::Crawler) -> ::Bool
 ```
-Scrapes only component names in `components` at `address`, providing a `Crawler` with components from `Address` to `f`
-```example
-
-```
+Continues to scrape addresses in `Crawler.addresses` recursively until one works. 
+Returns a `Bool`; `true` means that a page was successfully scraped and `false` means 
+we ran out of addresses. This is used internally by `crawl` so that errors aren't produced anytime 
+a broken or dead URL is provided.
 """
-function scrape(f::Function, address::String, components::String ...)
-    crawler::Crawler = Crawler(address)
-    f(scrape!(crawler, [components ...]))
-end
-
 function try_scrape_recursive!(crawler::Crawler)
     try
         scrape!(crawler)
@@ -147,13 +188,26 @@ end
 
 """
 ```julia
-crawl(f::Function, address::String; show_address::Bool = false) -> ::Crawler
+crawl(f::Function, ...; ...) -> ::Nothing
 ```
-`crawl` scrapes `address` then calls `f` on a `Crawler` with the scraped components, then crawls to addresses found on 
+`crawl` scrapes `address` using `scrape!`, crawls using `crawl!` then calls `f` on the `Crawler`. Next, it crawls to addresses found on 
 that page, repeating the function call until `kill!` is used or there are no remaining addresses. We may also provide multiple addresses. 
 `show_address` determines whether or not the crawler should print each address on request.
+```julia
+crawl(f::Function, address::String; show_address::Bool = false) -> ::Crawler
+crawl(f::Function, address::String; keys ...) -> ::Crawler
+crawl(f::Function, address::String ...; keyargs ...)
+```
 ```example
-
+using ToolipsCrawl
+titles = []
+crawl("https://chifidocs.com") do crawler::Crawler
+    titles = get_by_tag(crawler, "title")
+    if length(titles) > 0
+        @info "scraped title from " * crawler.address
+        push!(titles, titles[1][:text])
+    end
+end
 ```
 """
 function crawl(f::Function, crawler::Crawler; show_address::Bool = false)
@@ -199,12 +253,29 @@ end
 kill!(crawler::Crawler) -> ::Nothing
 ```
 Stops an active `Crawler`.
+- See also: `get_by_tag`, `crawl`, `crawl!`, `Crawler`, `get_by_name`
 """
 kill!(crawler::Crawler) = begin
     crawler.crawling = false
     println(Crayon(foreground = Symbol("light_red"), bold = true, blink = true), "Crawler: crawler stopped")
 end
 
+"""
+```julia
+get_by_tag(crawler::Crawler, tag::String) -> ::Vector{AbstractComponent}
+```
+Creates a `Vector` of components from the page currently being scraped, each `Component` 
+will have the tag `tag`. This is meant to be called within a `Function` provided to `scrape` or 
+`crawl`.
+```julia
+crawl("https://chifidocs.com") do crawler::Crawler
+    titles = get_by_tag(crawler, "title")
+    if length(titles) > 0
+        push!(titles, titles[1][:text])
+    end
+end
+```
+"""
 function get_by_tag(crawler::Crawler, tag::String)
     positions = findall("<$tag", crawler.raw)
     tagsymb = Symbol(tag)
@@ -234,6 +305,21 @@ function get_by_tag(crawler::Crawler, tag::String)
     return(components)::Vector{AbstractComponent}
 end
 
+"""
+```julia
+get_by_name(crawler::Crawler, name::String) -> ::Vector{AbstractComponent}
+```
+Creates a `Vector` of components from the page currently being scraped, will only grab components with a specific ID.
+ This is meant to be called within a `Function` provided to `scrape` or 
+`crawl`.
+```julia
+scrape("https://chifidocs.com") do crawler::Crawler
+    header = get_by_id(crawler, "welcome-1")
+    @info header[1][:text]
+end
+```
+See also: `get_by_tag`, `crawl`, `scrape`, `Crawler`, `ToolipsCrawl`
+"""
 function get_by_name(crawler::Crawler, name::String)
     raw = crawler.raw
     found_positions = findall("id=\"$component_name\"", raw)
@@ -265,5 +351,6 @@ function get_by_name(crawler::Crawler, name::String)
     end
     components::Vector{AbstractComponent}
 end
+
 export crawl, scrape, Crawler, get_by_tag, get_by_name
 end
