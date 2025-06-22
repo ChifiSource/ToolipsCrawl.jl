@@ -9,10 +9,10 @@ Created in December, 2023 by
 using ToolipsCrawl
 titles = []
 crawl("https://chifidocs.com") do crawler::Crawler
-    titles = get_by_tag(crawler, "title")
-    if length(titles) > 0
+    title_comps = get_by_tag(crawler, "title")
+    if length(title_comps) > 0
         @info "scraped title from " * crawler.address
-        push!(titles, titles[1][:text])
+        push!(titles, title_comps[1][:text])
     end
 end
 ```
@@ -77,10 +77,10 @@ end
 using ToolipsCrawl
 titles = []
 crawl("https://chifidocs.com") do crawler::Crawler
-    titles = get_by_tag(crawler, "title")
-    if length(titles) > 0
+    title_comps = get_by_tag(crawler, "title")
+    if length(title_comps) > 0
         @info "scraped title from " * crawler.address
-        push!(titles, titles[1][:text])
+        push!(titles, title_comps[1][:text])
     end
 end
 ```
@@ -152,7 +152,7 @@ scrape(f::Function, address::String) -> ::Nothing
 Scrapes `address`, providing a `Crawler` with components from `Address` to `f`.
 ```example
 scrape("https://chifidocs.com") do crawler::Crawler
-    header = get_by_id(crawler, "welcome-1")
+    header = get_by_name(crawler, "welcome-1")
     @info header[1][:text]
 end
 ```
@@ -202,42 +202,71 @@ crawl(f::Function, address::String ...; keyargs ...)
 using ToolipsCrawl
 titles = []
 crawl("https://chifidocs.com") do crawler::Crawler
-    titles = get_by_tag(crawler, "title")
-    if length(titles) > 0
+    title_comps = get_by_tag(crawler, "title")
+    if length(title_comps) > 0
         @info "scraped title from " * crawler.address
-        push!(titles, titles[1][:text])
+        push!(titles, title_comps[1][:text])
     end
 end
 ```
 """
-function crawl(f::Function, crawler::Crawler; show_address::Bool = false)
+function crawl(f::Function, crawler::Crawler; show_address::Bool = false, async::Bool = true)
     crawler.crawling = true
-    println(Crayon(foreground = Symbol("light_magenta"), bold = true), "Crawler: crawler started at $address")
-    while crawler.crawling
-        if show_address
-            println(crawler.address)
+    println(Crayon(foreground = Symbol("light_magenta"), bold = true), "Crawler: crawler started at $(crawler.address)")
+    if ~(async)
+        while crawler.crawling
+            if show_address
+                println(crawler.address)
+            end
+            success = try_scrape_recursive!(crawler)
+            if ~(success)
+                crawler.crawling = false
+                println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped (out of addresses)")
+                break
+            end
+            crawl!(crawler)
+            try
+                f(crawler)
+            catch e
+                crawler.crawling = false
+                throw(e)
+            end
+            if length(crawler.addresses) < 1
+                crawler.crawling = false
+                println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped (out of addresses)")
+                break
+            end
+            crawler.address = crawler.addresses[1]
+            deleteat!(crawler.addresses, 1)
         end
-        success = try_scrape_recursive!(crawler)
-        if ~(success)
-            crawler.crawling = false
-            println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped (out of addresses)")
-            break
+    else
+        @async while crawler.crawling
+            if show_address
+                println(crawler.address)
+            end
+            success = try_scrape_recursive!(crawler)
+            if ~(success)
+                crawler.crawling = false
+                println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped (out of addresses)")
+                break
+            end
+            crawl!(crawler)
+            try
+                f(crawler)
+            catch e
+                crawler.crawling = false
+                throw(e)
+            end
+            if length(crawler.addresses) < 1
+                crawler.crawling = false
+                println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped (out of addresses)")
+                break
+            end
+            crawler.address = crawler.addresses[1]
+            deleteat!(crawler.addresses, 1)
         end
-        crawl!(crawler)
-        try
-            f(crawler)
-        catch e
-            crawler.crawling = false
-            throw(e)
-        end
-        if length(crawler.addresses) < 1
-            crawler.crawling = false
-            println(Crayon(foreground = Symbol("light_red"), bold = true), "Crawler: crawler stopped (out of addresses)")
-            break
-        end
-        crawler.address = crawler.addresses[1]
-        deleteat!(crawler.addresses, 1)
     end
+    crawler::Crawler
 end
 
 crawl(f::Function, address::String; keys ...) = crawl(f, Crawler(address); keys ...)
@@ -284,7 +313,7 @@ function get_by_tag(crawler::Crawler, tag::String)
         arg_start = maximum(pos) + 2
         stop_tag::Int64 = maximum(findnext(">", crawler.raw, arg_start))
         tagend = findnext("</$tag>", crawler.raw, stop_tag)
-        propsplits = split(crawler.raw[arg_start:stop_tag - 1], "\" ")
+        propsplits = split(crawler.raw[arg_start:stop_tag - 1], "' ")
         comp = Component{tagsymb}("-")
         
         if isnothing(tagend)
@@ -293,7 +322,7 @@ function get_by_tag(crawler::Crawler, tag::String)
             text = crawler.raw[stop_tag + 1:minimum(tagend) - 1]
         end
         for prop in propsplits
-            keyval = split(replace(prop, "\"" => ""), "=")
+            keyval = split(replace(prop, "'" => ""), "=")
             if length(keyval) == 1
                 continue
             end
@@ -314,7 +343,7 @@ Creates a `Vector` of components from the page currently being scraped, will onl
 `crawl`.
 ```julia
 scrape("https://chifidocs.com") do crawler::Crawler
-    header = get_by_id(crawler, "welcome-1")
+    header = get_by_name(crawler, "welcome-1")
     @info header[1][:text]
 end
 ```
@@ -322,12 +351,15 @@ See also: `get_by_tag`, `crawl`, `scrape`, `Crawler`, `ToolipsCrawl`
 """
 function get_by_name(crawler::Crawler, name::String)
     raw = crawler.raw
-    found_positions = findall("id=\"$component_name\"", raw)
-    if isnothing(found_position) || length(found_position) == 0
+    found_positions = findall("id='$name'", raw)
+    if isnothing(found_positions) || length(found_positions) == 0
+        @info "id=\"$name\""
+        @info crawler.raw
         return(Vector{AbstractComponent}())
     end
     components = Vector{AbstractComponent}()
     for found_position in found_positions
+        found_position = minimum(found_position)
         tag_begin::UnitRange{Int64} = findprev("<", raw, found_position)
         stop_tag::Int64 = maximum(findnext(">", raw, found_position))
         tag::Symbol = Symbol(raw[minimum(tag_begin) + 1:found_position - 2])
@@ -337,14 +369,14 @@ function get_by_name(crawler::Crawler, name::String)
         else
             text::String = raw[stop_tag + 1:minimum(tagend) - 1]
         end
-        text = rep_in(text)
-        splits::Vector{SubString} = split(raw[found_position:stop_tag], "\" ")
-        push!(components, Component{tag}(component_name, text = text, [begin
+        text = ToolipsServables.rep_in(text)
+        splits::Vector{SubString} = split(raw[found_position:stop_tag], "' ")
+        push!(components, Component{tag}(name, text = text, [begin
             splits = split(property, "=")
             if length(splits) < 2
                 "" => ""
             else
-                replace(string(splits[1]), "\"" => "", ">" => "", "<" => "") => replace(string(splits[2]), 
+                replace(string(splits[1]), "'" => "", ">" => "", "<" => "") => replace(string(splits[2]), 
                 "\"" => "", ">" => "", "<" => "")
             end
         end for property in splits] ...))
@@ -352,5 +384,5 @@ function get_by_name(crawler::Crawler, name::String)
     components::Vector{AbstractComponent}
 end
 
-export crawl, scrape, Crawler, get_by_tag, get_by_name
+export crawl, scrape, Crawler, get_by_tag, get_by_name, kill!
 end
